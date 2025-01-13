@@ -17,7 +17,7 @@ Follow these steps to run the project locally.
 
 ### Prerequisites
 
-- Python 3.12 or higher
+- Python 3.12 or lower
 - `pip` or `uv` for dependency management
 
 ### Clone the repository
