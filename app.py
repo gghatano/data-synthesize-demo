@@ -18,12 +18,13 @@ def get_csv_download_link(df, filename="data.csv"):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">Download {filename}</a>'
     return href
 
+
 def generate_test_data():
     """テストデータの生成（現実的な分布を使用）"""
     np.random.seed(42)
-    n = 1000
+    n = 2000
 
-    # 年齢を一様分布で生成（18歳以上）
+    # 年齢を一様分布で生成（18歳以上64歳以下）
     age = np.random.uniform(18, 65, n)
 
     # 年齢と経験年数に相関を持たせる
@@ -31,20 +32,26 @@ def generate_test_data():
 
     # 収入を年齢と経験年数から計算
     base_income = 30000 + experience * 2000 + (age - 25) * 500
-    income = np.maximum(25000, base_income + np.random.normal(0, 5000, n))
+    income = base_income + np.random.normal(0, 5000, n)
+
+    # 収入の下限を平滑化（25000付近の極端な集中を緩和）
+    income = np.where(income < 25000,
+                      25000 + np.random.uniform(0, 2000, size=n),
+                      income)
 
     df = pd.DataFrame({
-        'age': np.round(age, 1),
-        'years_experience': np.round(experience, 1),
-        'annual_income': np.round(income, -2)  # 100単位で丸める
+        'age': np.round(age).astype(int),
+        'years_experience': np.round(experience).astype(int),
+        'annual_income': np.round(income, -2).astype(int)  # 100単位で丸めて整数化
     })
 
-    # 現実的な範囲に収める
-    df['age'] = df['age'].clip(18, 65)
-    df['years_experience'] = df['years_experience'].clip(0, 40)
-    df['annual_income'] = df['annual_income'].clip(25000, 150000)
+    # 現実的な範囲にフィルタリング
+    df = df[(df['age'] >= 18) & (df['age'] <= 64)]
+    df = df[(df['annual_income'] >= 25000) & (df['annual_income'] <= 150000)]
 
+    # データに微小なランダム性を追加してスムージング（整数化不要）
     return df
+
 
 def validate_data(df):
     """データの検証と警告の表示"""
@@ -131,7 +138,8 @@ def plot_distribution_comparison(real_data, synthetic_data, column):
         x=real_data[column],
         name='Real Data',
         opacity=0.7,
-        nbinsx=30
+        nbinsx=30,
+        histnorm='probability'  # 相対頻度で表示
     ))
     
     # 合成データのヒストグラム
@@ -139,14 +147,15 @@ def plot_distribution_comparison(real_data, synthetic_data, column):
         x=synthetic_data[column],
         name='Synthetic Data',
         opacity=0.7,
-        nbinsx=30
+        nbinsx=30,
+        histnorm='probability'  # 相対頻度で表示
     ))
     
     fig.update_layout(
         barmode='overlay',
         title=f'Distribution Comparison: {column}',
         xaxis_title=column,
-        yaxis_title='Count'
+        yaxis_title='Frequency'
     )
     
     return fig
@@ -322,7 +331,7 @@ def main():
                 num_rows = st.number_input(
                     '生成する行数',
                     min_value=1,
-                    max_value=min(100000, len(real_data) * 2),
+                    max_value=10000,
                     value=len(real_data)
                 )
             
