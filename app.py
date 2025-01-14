@@ -19,29 +19,31 @@ def get_csv_download_link(df, filename="data.csv"):
     return href
 
 def generate_test_data():
-    """テストデータの生成"""
+    """テストデータの生成（現実的な分布を使用）"""
     np.random.seed(42)
     n = 1000
-    
+
+    # 年齢を一様分布で生成（18歳以上）
+    age = np.random.uniform(18, 65, n)
+
     # 年齢と経験年数に相関を持たせる
-    age = np.random.normal(35, 10, n)
     experience = np.maximum(0, age - 22 + np.random.normal(0, 2, n))
-    
+
     # 収入を年齢と経験年数から計算
     base_income = 30000 + experience * 2000 + (age - 25) * 500
     income = np.maximum(25000, base_income + np.random.normal(0, 5000, n))
-    
+
     df = pd.DataFrame({
         'age': np.round(age, 1),
         'years_experience': np.round(experience, 1),
         'annual_income': np.round(income, -2)  # 100単位で丸める
     })
-    
+
     # 現実的な範囲に収める
-    df['age'] = df['age'].clip(22, 65)
+    df['age'] = df['age'].clip(18, 65)
     df['years_experience'] = df['years_experience'].clip(0, 40)
     df['annual_income'] = df['annual_income'].clip(25000, 150000)
-    
+
     return df
 
 def validate_data(df):
