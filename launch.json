@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "WSL2 Streamlit Debug",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/.venv/bin/streamlit",
+            "args": ["run", "${workspaceFolder}/app.py"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}
