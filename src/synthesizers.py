@@ -14,15 +14,14 @@ def generate_synthetic_data(real_data, num_rows, method='gaussian_copula', epoch
             model = GaussianCopulaSynthesizer(metadata)
             st.info('GaussianCopulaを使用してデータを生成中...')
         elif method == 'BaseIndependent_Sampler':
-            # BaseIndependentSamplerの代わりにGaussianCopulaを独立モードで使用
+            # SDV 1.17.3では独立サンプリングのための専用パラメータが異なる
             model = GaussianCopulaSynthesizer(
                 metadata,
                 enforce_min_max_values=True,
                 enforce_rounding=True,
                 default_distribution='gaussian',
-                # 独立サンプリングのために相関を無視する設定
-                numerical_distributions={'copulas': 'gaussian'},
-                correlation_method=None
+                # SDV 1.17.3では相関を無視するための設定
+                model_kwargs={'covariance': 'diagonal'}  # 対角共分散行列を使用して独立サンプリング
             )
             st.info('独立サンプリングモードを使用してデータを生成中...')
         else:  # CTGAN
