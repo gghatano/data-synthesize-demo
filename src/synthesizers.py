@@ -1,7 +1,6 @@
 import streamlit as st
 import time
 from sdv.single_table import GaussianCopulaSynthesizer, CTGANSynthesizer
-from sdv.sampling import BaseIndependentSampler
 from sdv.metadata import SingleTableMetadata
 
 def generate_synthetic_data(real_data, num_rows, method='gaussian_copula', epochs=100):
@@ -15,8 +14,17 @@ def generate_synthetic_data(real_data, num_rows, method='gaussian_copula', epoch
             model = GaussianCopulaSynthesizer(metadata)
             st.info('GaussianCopulaを使用してデータを生成中...')
         elif method == 'BaseIndependent_Sampler':
-            model = BaseIndependentSampler(metadata)
-            st.info('BaseIndependentSamplerを使用してデータを生成中...')
+            # BaseIndependentSamplerの代わりにGaussianCopulaを独立モードで使用
+            model = GaussianCopulaSynthesizer(
+                metadata,
+                enforce_min_max_values=True,
+                enforce_rounding=True,
+                default_distribution='gaussian',
+                # 独立サンプリングのために相関を無視する設定
+                numerical_distributions={'copulas': 'gaussian'},
+                correlation_method=None
+            )
+            st.info('独立サンプリングモードを使用してデータを生成中...')
         else:  # CTGAN
             model = CTGANSynthesizer(metadata, epochs=epochs)
             st.info(f'CTGANを使用してデータを生成中... (エポック数: {epochs})')

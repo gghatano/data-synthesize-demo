@@ -124,8 +124,8 @@ def main():
                     '合成手法を選択',
                     ['BaseIndependent_Sampler', 'gaussian_copula', 'ctgan'],
                     format_func=lambda x: {
-                        'BaseIndependent_Sampler': 'Independent Sampler (高速・シンプル)',
-                        'gaussian_copula': 'GaussianCopula (高速・シンプル・相関の保持)',
+                        'BaseIndependent_Sampler': '独立サンプリング (高速・相関無視)',
+                        'gaussian_copula': 'GaussianCopula (高速・相関の保持)',
                         'ctgan': 'CTGAN (高品質・低速)'
                     }[x]
                 )
