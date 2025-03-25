@@ -1,218 +1,21 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sdv.single_table import GaussianCopulaSynthesizer, CTGANSynthesizer
-from sdv.sampling import BaseIndependentSampler
-from sdv.metadata import SingleTableMetadata
-import plotly.graph_objects as go
-import plotly.express as px
-from scipy.stats import ks_2samp
-import time
-from io import StringIO
-import base64
 
-def get_csv_download_link(df, filename="data.csv"):
-    """DataFrameをダウンロードリンクとして提供"""
-    csv = df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">Download {filename}</a>'
-    return href
+# モジュールのインポート
+from src.data_generator import generate_test_data
+from src.data_processor import load_data, validate_data
+from src.synthesizers import generate_synthetic_data
+from src.evaluators import calculate_distribution_similarity, calculate_correlation_matrices
+from src.visualizers import plot_distribution_comparison, plot_correlation_matrices
+from utils.helpers import get_csv_download_link
+from config.settings import CTGAN_EPOCH_INFO, MIN_EPOCH_COUNT, MAX_EPOCH_COUNT
 
-
-def generate_test_data():
-    """テストデータの生成（現実的な分布を使用）"""
-    np.random.seed(42)
-    n = 2000
-
-    # 年齢を一様分布で生成（18歳以上64歳以下）
-    age = np.random.uniform(18, 65, n)
-
-    # 年齢と経験年数に相関を持たせる
-    experience = np.maximum(0, age - 22 + np.random.normal(0, 2, n))
-
-    # 収入を年齢と経験年数から計算
-    base_income = 30000 + experience * 2000 + (age - 25) * 500
-    income = base_income + np.random.normal(0, 5000, n)
-
-    # 収入の下限を平滑化（25000付近の極端な集中を緩和）
-    income = np.where(income < 25000,
-                      25000 + np.random.uniform(0, 2000, size=n),
-                      income)
-
-    df = pd.DataFrame({
-        'age': np.round(age).astype(int),
-        'years_experience': np.round(experience).astype(int),
-        'annual_income': np.round(income, -2).astype(int)  # 100単位で丸めて整数化
-    })
-
-    # 現実的な範囲にフィルタリング
-    df = df[(df['age'] >= 18) & (df['age'] <= 64)]
-    df = df[(df['annual_income'] >= 25000) & (df['annual_income'] <= 150000)]
-
-    # データに微小なランダム性を追加してスムージング（整数化不要）
-    return df
-
-
-def validate_data(df):
-    """データの検証と警告の表示"""
-    warnings = []
-    errors = []
-    
-    # サイズチェック
-    if len(df) > 100000:
-        errors.append("データサイズが大きすぎます（最大100,000行まで）")
-    
-    # 欠損値チェック
-    if df.isnull().any().any():
-        warnings.append("欠損値が含まれています。自動的に処理されます。")
-    
-    # 数値型列の確認
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    if len(numeric_cols) < 2:
-        errors.append("少なくとも2つの数値型列が必要です")
-    
-    return warnings, errors
-
-def load_data(uploaded_file):
-    """アップロードされたCSVファイルを読み込む"""
-    if uploaded_file is not None:
-        try:
-            string_data = StringIO(uploaded_file.getvalue().decode('utf-8'))
-            df = pd.read_csv(string_data)
-            warnings, errors = validate_data(df)
-            
-            for warning in warnings:
-                st.warning(warning)
-            for error in errors:
-                st.error(error)
-                return None
-                
-            return df
-        except Exception as e:
-            st.error(f"データ読み込みエラー: {str(e)}")
-            return None
-    return None
-
+# キャッシュデコレータをここに追加（元のコードでは関数に直接付与されていた）
 @st.cache_data
-def generate_synthetic_data(real_data, num_rows, method='gaussian_copula', epochs=100):
-    """選択された手法で合成データを生成する（キャッシュ付き）"""
-    try:
-        # メタデータの作成
-        metadata = SingleTableMetadata()
-        metadata.detect_from_dataframe(real_data)
-        
-        if method == 'gaussian_copula':
-            model = GaussianCopulaSynthesizer(metadata)
-            st.info('GaussianCopulaを使用してデータを生成中...')
-        elif method == 'BaseIndependent_Sampler':
-            model = BaseIndependentSampler(metadata)
-            st.info('BaseIndependentSamplerを使用してデータを生成中...')
-        else:  # CTGAN
-            model = CTGANSynthesizer(metadata, epochs=epochs)
-            st.info(f'CTGANを使用してデータを生成中... (エポック数: {epochs})')
-        
-        start_time = time.time()
-        
-        # モデルの学習とサンプリング
-        model.fit(real_data)
-        synthetic_data = model.sample(num_rows)
-        generation_time = time.time() - start_time
-        
-        return synthetic_data, generation_time
-        
-    except Exception as e:
-        st.error(f"データ生成エラー: {str(e)}")
-        return None, 0
-
-def calculate_distribution_similarity(real_data, synthetic_data, column):
-    """KSテストを使用して分布の類似度を計算"""
-    statistic, pvalue = ks_2samp(real_data[column], synthetic_data[column])
-    return 1 - statistic  # 類似度に変換（1に近いほど類似）
-
-def plot_distribution_comparison(real_data, synthetic_data, column):
-    """分布比較のプロット生成"""
-    fig = go.Figure()
-    
-    # 実データのヒストグラム
-    fig.add_trace(go.Histogram(
-        x=real_data[column],
-        name='Real Data',
-        opacity=0.7,
-        nbinsx=30,
-        histnorm='probability'  # 相対頻度で表示
-    ))
-    
-    # 合成データのヒストグラム
-    fig.add_trace(go.Histogram(
-        x=synthetic_data[column],
-        name='Synthetic Data',
-        opacity=0.7,
-        nbinsx=30,
-        histnorm='probability'  # 相対頻度で表示
-    ))
-    
-    fig.update_layout(
-        barmode='overlay',
-        title=f'Distribution Comparison: {column}',
-        xaxis_title=column,
-        yaxis_title='Frequency'
-    )
-    
-    return fig
-
-def calculate_correlation_matrices(real_data, synthetic_data):
-    """相関行列の計算と比較"""
-    real_corr = real_data.corr()
-    synthetic_corr = synthetic_data.corr()
-    correlation_diff = abs(real_corr - synthetic_corr)
-    return real_corr, synthetic_corr, correlation_diff
-
-def plot_correlation_matrices(real_corr, synthetic_corr, correlation_diff):
-    """相関行列の比較プロット"""
-    fig = go.Figure()
-    
-    # ボタンで切り替え可能な3つのヒートマップ
-    figures = [
-        ('Real Data', real_corr),
-        ('Synthetic Data', synthetic_corr),
-        ('Absolute Difference', correlation_diff)
-    ]
-    
-    for i, (name, matrix) in enumerate(figures):
-        fig.add_trace(go.Heatmap(
-            z=matrix,
-            x=matrix.columns,
-            y=matrix.columns,
-            colorscale='RdBu' if i < 2 else 'Reds',
-            zmin=-1 if i < 2 else 0,
-            zmax=1 if i < 2 else 1,
-            name=name,
-            visible=i == 0  # 最初は実データのみ表示
-        ))
-    
-    # ボタンの設定
-    buttons = []
-    for i, (name, _) in enumerate(figures):
-        visible = [j == i for j in range(len(figures))]
-        buttons.append(dict(
-            label=name,
-            method="update",
-            args=[{"visible": visible}]
-        ))
-    
-    fig.update_layout(
-        updatemenus=[dict(
-            type="buttons",
-            direction="right",
-            x=0.7,
-            y=1.15,
-            showactive=True,
-            buttons=buttons
-        )],
-        title="Correlation Matrix Comparison"
-    )
-    
-    return fig
+def cached_generate_synthetic_data(real_data, num_rows, method='gaussian_copula', epochs=100):
+    """generate_synthetic_data関数のキャッシュラッパー"""
+    return generate_synthetic_data(real_data, num_rows, method, epochs)
 
 def display_results():
     """評価結果の表示（セッションステートからデータを使用）"""
@@ -319,10 +122,10 @@ def main():
             with col1:
                 method = st.selectbox(
                     '合成手法を選択',
-                    ['BaseIndependent_sampler', 'gaussian_copula', 'ctgan'],
+                    ['BaseIndependent_Sampler', 'gaussian_copula', 'ctgan'],
                     format_func=lambda x: {
-                        'BaseIndependent_sampler': 'Independent Sampler (高速・シンプル)',
-                        'gaussian_copula': 'GaussianCopula (高速・シンプル・相関の保持)',
+                        'BaseIndependent_Sampler': '独立サンプリング (高速・相関無視)',
+                        'gaussian_copula': 'GaussianCopula (高速・相関の保持)',
                         'ctgan': 'CTGAN (高品質・低速)'
                     }[x]
                 )
@@ -341,26 +144,16 @@ def main():
                 # エポック数を直接指定できるスライダーに変更
                 epochs = st.slider(
                     'エポック数',
-                    min_value=10,
-                    max_value=10000,
+                    min_value=MIN_EPOCH_COUNT,
+                    max_value=MAX_EPOCH_COUNT,
                     value=100,
                     format="%d",  # 整数値として表示
                 )
-                st.info(f"""
-                エポック数の目安：
-                - 100以下：高速だが品質は低め
-                - 100-1000：バランスの取れた設定
-                - 1000以上：高品質だが処理時間が長い
-                
-                大きなデータセットでは少なめに設定することをお勧めします。
-                処理時間の目安：
-                - 1000行のデータで100エポック ≒ 2-3分
-                - 1000行のデータで1000エポック ≒ 20-30分
-                """)
+                st.info(CTGAN_EPOCH_INFO)
             
             if st.button('合成データを生成', help='クリックするとデータ生成が始まります'):
                 with st.spinner('データを生成中...'):
-                    synthetic_data, generation_time = generate_synthetic_data(
+                    synthetic_data, generation_time = cached_generate_synthetic_data(
                         real_data, num_rows, method, epochs
                     )
                     
